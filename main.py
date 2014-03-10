@@ -11,6 +11,10 @@ velocities = []
 curVertex = -1
 curEdge = -1
 attractor = False
+attractorCenterVertex = -1
+attractorVertex = -1
+attractorIncrementDirection = 1
+attractorIncrementTheta = numpy.pi / 6
 tracks = {}
 view = 0
 VIEWS = 8
@@ -57,7 +61,7 @@ def drawString(x,y,font,str):
 
 first = True
 def display():
-  global link, curVertex, curEdge, velocities, view, info, attractor, tracks, first
+  global link, curVertex, curEdge, velocities, view, info, attractor, tracks, first, attractorVertex, attractorRadius
   glClearColor(1,1,1,1)
   glClear(GL_COLOR_BUFFER_BIT)
   glEnable2D()
@@ -164,7 +168,7 @@ def makeAngle2(i1,j1,i2,j2):
   if j1==j2: return makeAngle(j1,i1,i2)
 
 def mouse(button, state, x, y):
-  global link, curVertex, curEdge, velocities, attractor
+  global link, curVertex, curEdge, velocities, attractor, attractorVertex, attractorCenterVertex
   if state!=GLUT_UP: return
 
   # alt-clicking should count as middle button, but if it doesn't... then it does:
@@ -202,10 +206,22 @@ def mouse(button, state, x, y):
         link.angles.append(angle)
       update()
   elif button==GLUT_RIGHT_BUTTON:
-    if attractor and ((attractor[0]-x)**2+(attractor[1]-y)**2)<PICK_DIST2:
-      attractor = False
-    else: attractor = (x,y)
+    i, k = pick(x, y)
+    if i >= 0:
+      if i in (curVertex, attractorVertex):
+        attractor = False
+        attractorVertex, attractorCenterVertex = -1, -1
+      else:
+        attractor = link.vertices[i] # set the attractor to the vertex selected
+        attractorCenterVertex = curVertex # set center to be the currently selected vertex
+        attractorVertex = i
+
     glutPostRedisplay()
+
+    # if attractor and ((attractor[0]-x)**2+(attractor[1]-y)**2)<PICK_DIST2:
+    #   attractor = False
+    # else: attractor = (x,y)
+    # glutPostRedisplay()
 
 def keyboard(key, x, y):
   global link, curVertex, curEdge, velocities, view, info, recording, tracks
@@ -285,16 +301,52 @@ def keyboard(key, x, y):
       recording = 0
 
 
+step = 0
 def idle():
-  global link,velocities,curVertex,attractor, recording, tracks
-  if not attractor or curVertex<0 or len(velocities)==0 or curVertex in link.fixed:
+  global link,velocities,curVertex,attractor, recording, tracks, step
+  if not attractor or curVertex<0 or len(velocities)==0:
     return
 
   if recording>=0:
     screenshot('screenshot%04d.png'%recording)
     recording += 1
 
-  x,y = link.vertices[curVertex]
+  x,y = link.vertices[attractorVertex]
+  if step % 10 == 0:
+    centerX, centerY = link.vertices[attractorCenterVertex]
+    relativeX, relativeY = x - centerX, y - centerY
+    r = numpy.sqrt(relativeX**2 + relativeY**2)
+    s = r * numpy.sqrt(2 - 2 * numpy.cos(attractorIncrementTheta))
+    if relativeY == 0:
+      relativeY += 0.00001
+
+    # Some zero cases are interesting but i don't care.
+    if relativeX >= 0 and relativeY >= 0:
+      beta = ((numpy.pi - attractorIncrementTheta) / 2) - numpy.arctan(abs(relativeX / relativeY))
+      dx = s * numpy.sin(beta)
+      dy = s * numpy.cos(beta)
+      attractor = (x + dx, y - dy)
+    elif relativeX >= 0 and relativeY < 0:
+      # second quad
+      beta = 180 - 90 + attractorIncrementTheta / 2 - numpy.arctan(abs(relativeX / relativeY))
+      dx = s * numpy.sin(beta)
+      dy = s * numpy.cos(beta)
+      attractor = (x - dx, y - dy)
+    elif relativeX < 0 and relativeY <= 0:
+      beta = ((numpy.pi - attractorIncrementTheta) / 2) - numpy.arctan(abs(relativeX / relativeY))
+      dx = s * numpy.sin(beta)
+      dy = s * numpy.cos(beta)
+      attractor = (x - dx, y + dy)
+    elif relativeX < 0 and relativeY > 0:
+      beta = 180 - 90 + attractorIncrementTheta / 2 - numpy.arctan(abs(relativeX / relativeY))
+      dx = s * numpy.sin(beta)
+      dy = s * numpy.cos(beta)
+      attractor = (x + dx, y + dy)
+
+    print x, y, dx, dy, attractor
+
+  step += 1
+
   v0 = numpy.array([attractor[0]-x,attractor[1]-y])
   dv = numpy.dot(v0,v0)
   if dv<ATTRACT_DIST2: # turn off attractor
@@ -303,7 +355,7 @@ def idle():
     return
   v0 = V_MAG*v0/numpy.sqrt(dv)
   for vel in velocities:
-    v = vel[curVertex]
+    v = vel[attractorVertex]
     c = numpy.dot(v0,v)/numpy.dot(v,v)
     c = max(-V_COEFF, min(V_COEFF, c)) #don't allow big coefficients
     v0 -= c*v
