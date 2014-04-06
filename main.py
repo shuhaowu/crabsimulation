@@ -15,6 +15,10 @@ attractorCenterVertex = -1
 attractorVertex = -1
 attractorIncrementDirection = 1
 attractorIncrementTheta = numpy.pi / 6
+testInitTheta = None
+testCurrentTheta = None
+testLastTheta = None
+testLast10ThetaDeltas = []
 tracks = {}
 view = 0
 VIEWS = 8
@@ -303,7 +307,7 @@ def keyboard(key, x, y):
 
 step = 0
 def idle():
-  global link,velocities,curVertex,attractor, recording, tracks, step
+  global link,velocities,curVertex,attractor, recording, tracks, step, testCurrentTheta, testLastTheta, testLast10ThetaDeltas
   if not attractor or curVertex<0 or len(velocities)==0:
     return
 
@@ -316,43 +320,45 @@ def idle():
     centerX, centerY = link.vertices[attractorCenterVertex]
     relativeX, relativeY = x - centerX, y - centerY
     r = numpy.sqrt(relativeX**2 + relativeY**2)
-    s = r * numpy.sqrt(2 - 2 * numpy.cos(attractorIncrementTheta))
-    if relativeY == 0:
-      relativeY += 0.00001
 
-    # Some zero cases are interesting but i don't care.
-    if relativeX >= 0 and relativeY >= 0:
-      beta = ((numpy.pi - attractorIncrementTheta) / 2) - numpy.arctan(abs(relativeX / relativeY))
-      dx = s * numpy.sin(beta)
-      dy = s * numpy.cos(beta)
-      attractor = (x + dx, y - dy)
-    elif relativeX >= 0 and relativeY < 0:
-      # second quad
-      beta = 180 - 90 + attractorIncrementTheta / 2 - numpy.arctan(abs(relativeX / relativeY))
-      dx = s * numpy.sin(beta)
-      dy = s * numpy.cos(beta)
-      attractor = (x - dx, y - dy)
-    elif relativeX < 0 and relativeY <= 0:
-      beta = ((numpy.pi - attractorIncrementTheta) / 2) - numpy.arctan(abs(relativeX / relativeY))
-      dx = s * numpy.sin(beta)
-      dy = s * numpy.cos(beta)
-      attractor = (x - dx, y + dy)
-    elif relativeX < 0 and relativeY > 0:
-      beta = 180 - 90 + attractorIncrementTheta / 2 - numpy.arctan(abs(relativeX / relativeY))
-      dx = s * numpy.sin(beta)
-      dy = s * numpy.cos(beta)
-      attractor = (x + dx, y + dy)
+    theta = numpy.arctan2(relativeY, relativeX)
+    theta -= attractorIncrementTheta
+    if theta <= -numpy.pi:
+      theta += 2 * numpy.pi
+    attractor = (centerX + r * numpy.cos(theta), centerY + r * numpy.sin(theta))
 
-    print x, y, dx, dy, attractor
+    if testInitTheta is not None:
+      if testCurrentTheta is None:
+        testCurrentTheta = "start" # Skips first it
+      else:
+        # skips second iteration
+        theta = numpy.arctan2(relativeY, relativeX)
+        testCurrentTheta  = (-theta + numpy.pi / 2) % (2 * numpy.pi)
+        if testLastTheta is not None:
+          testLast10ThetaDeltas.append(((testCurrentTheta - testLastTheta) % (2 * numpy.pi)))
+          if len(testLast10ThetaDeltas) > 10:
+            testLast10ThetaDeltas.pop(0)
+            if sum(testLast10ThetaDeltas) / len(testLast10ThetaDeltas) < 0.01:
+              print "STUCK?"
+
+          if testCurrentTheta < testLastTheta:
+            if testLastTheta <= testInitTheta <= 2 * numpy.pi or 0 <= testInitTheta <= testCurrentTheta:
+              print >> sys.stderr, "CIRCLE FOUND"
+          else:
+            if testLastTheta <= testInitTheta <= testCurrentTheta:
+              print >> sys.stderr, "CIRCLE FOUND"
+
+
+        testLastTheta = testCurrentTheta
 
   step += 1
 
   v0 = numpy.array([attractor[0]-x,attractor[1]-y])
   dv = numpy.dot(v0,v0)
-  if dv<ATTRACT_DIST2: # turn off attractor
-    attractor = False
-    glutPostRedisplay()
-    return
+  # if dv<ATTRACT_DIST2: # turn off attractor
+  #  attractor = False
+  #  glutPostRedisplay()
+  #  return
   v0 = V_MAG*v0/numpy.sqrt(dv)
   for vel in velocities:
     v = vel[attractorVertex]
@@ -394,7 +400,7 @@ def initWindow():
 
 
 def init(): #haha, definite
-  global link, V_MAG, V_COEFF
+  global link, V_MAG, V_COEFF, attractorCenterVertex, attractorVertex, curVertex, testInitTheta, attractor, testCurrentTheta, testLastTheta
   if len(sys.argv)>=2: #<linkage-file>
     link.load(sys.argv[1])
     update()
@@ -403,30 +409,41 @@ def init(): #haha, definite
   if len(sys.argv)>=4: #<max-step>
     V_COEFF = float(sys.argv[3])
 
+  if len(sys.argv) >= 5:
+    attractorCenterVertex = int(sys.argv[4])
+    curVertex = attractorCenterVertex
+    attractorVertex = int(sys.argv[5])
+    tracks[attractorVertex] = []
+    attractor = link.vertices[attractorVertex]
+    relative = numpy.array(link.vertices[attractorVertex]) - numpy.array(link.vertices[attractorCenterVertex])
+    testInitTheta = numpy.arctan2(relative[1], relative[0])
+    testInitTheta = (-testInitTheta + numpy.pi / 2) % (2 * numpy.pi)
 
-print """usage: python main.py [<linkage-file> [<step-size=1> [<max-step=1>]]]
-click to add vertices
-click to (de)select a vertex and middle-click (alt-click) another vertex to add an edge
-click to (de)select an edge and middle-click (alt-click) an adjacent edge to fix their angle
-right-click (control-click) to place or remove the attractor, which attracts the selected vertex
-press 'f' to fix the selected vertex
-press 't' to track the selected vertex
-press 'd' to delete the selected component
-press 'z' to split the selected edge at its midpoint
-press 'c' to clear everything away
-press 'l' to load from saved_linkage.txt
-press 's' to save to saved_linkage.txt
-press 'v' to cycle through viewing options
-press 'i' to toggle information display
-press 'm' to maximize/minimize to/from fullscreen
-press 'p' to print image to screenshot.png
-press 'r' to toggle motion recording to screenshot0000.png through screenshot9999.png"""
 
-glutInit(sys.argv)
-glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
-glutInitWindowSize(600, 600)
-glutCreateWindow('linkage')
-init()
-initWindow()
-glutIdleFunc(idle)
-glutMainLoop()
+if __name__ == "__main__":
+  print >> sys.stderr, """usage: python main.py [<linkage-file> [<step-size=1> [<max-step=1>]]]
+  click to add vertices
+  click to (de)select a vertex and middle-click (alt-click) another vertex to add an edge
+  click to (de)select an edge and middle-click (alt-click) an adjacent edge to fix their angle
+  select a vertex and then right click another to add a counter clockwise motor
+  press 'f' to fix the selected vertex
+  press 't' to track the selected vertex
+  press 'd' to delete the selected component
+  press 'z' to split the selected edge at its midpoint
+  press 'c' to clear everything away
+  press 'l' to load from saved_linkage.txt
+  press 's' to save to saved_linkage.txt
+  press 'v' to cycle through viewing options
+  press 'i' to toggle information display
+  press 'm' to maximize/minimize to/from fullscreen
+  press 'p' to print image to screenshot.png
+  press 'r' to toggle motion recording to screenshot0000.png through screenshot9999.png"""
+
+  glutInit(sys.argv)
+  glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
+  glutInitWindowSize(600, 600)
+  glutCreateWindow('linkage')
+  init()
+  initWindow()
+  glutIdleFunc(idle)
+  glutMainLoop()
