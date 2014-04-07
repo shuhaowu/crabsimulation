@@ -95,7 +95,7 @@ def double_integration_threaded(fixed_vertex, moving_vertex):
     print "current_length:", current_length
     taskq = Queue()
     resultq = Queue()
-    for i in range(8):
+    for i in range(12):
       worker = SingleSimulation(taskq, resultq)
       worker.daemon = True
       worker.start()
