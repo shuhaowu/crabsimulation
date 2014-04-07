@@ -1,7 +1,7 @@
 from linkage import Linkage
 import math
 import subprocess
-
+import random
 
 class Testor(object):
   def __init__(self, base="crab.txt", motor_link=(0, 1)):
@@ -33,8 +33,10 @@ class Testor(object):
     return theta
 
   def simulate(self):
-    self.linkage.save("verify_linkage.txt")
-    p = subprocess.Popen(["python", "main.py", "verify_linkage.txt", "1", "1", str(self.motor_link[0]), str(self.motor_link[1])], stderr=subprocess.PIPE)
+    filename = "verify_linkage.%d.txt" % random.randint(0, 1000000000)
+    print filename
+    self.linkage.save(filename)
+    p = subprocess.Popen(["python", "main.py", filename, "1", "1", str(self.motor_link[0]), str(self.motor_link[1])], stderr=subprocess.PIPE)
 
     found = 0
     stuck = 0
