@@ -339,7 +339,7 @@ def idle():
           if len(testLast10ThetaDeltas) > 10:
             testLast10ThetaDeltas.pop(0)
             if sum(testLast10ThetaDeltas) / len(testLast10ThetaDeltas) < 0.01:
-              print "STUCK?"
+              print >> sys.stderr, "STUCK?"
 
           if testCurrentTheta < testLastTheta:
             if testLastTheta <= testInitTheta <= 2 * numpy.pi or 0 <= testInitTheta <= testCurrentTheta:
